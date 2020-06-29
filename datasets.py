@@ -8,29 +8,20 @@ from torchvision.transforms import functional as F
 from torchvision.datasets import ImageFolder, CIFAR10, CIFAR100, CelebA
 
 class BatchSampler(BaseSampler):
-    def __init__(self, dataset, num_iterations, batch_size, replacement=True):
+    def __init__(self, dataset, num_iterations, batch_size):
 
         self.dataset = dataset
         self.num_iterations = num_iterations
         self.batch_size = batch_size
-        self.replacement = replacement
 
         self.sampler = None
 
     def __iter__(self):
         indices = []
         for _ in range(self.num_iterations):
-            if self.replacement:
-                indices = random.sample(range(len(self.dataset)),
-                                        self.batch_size)
-                yield indices
-            else:
-                if len(indices) < self.batch_size:
-                    next_indices = list(range(len(self.dataset)))
-                    random.shuffle(next_indices)
-                    indices = indices + next_indices
-                yield indices[:self.batch_size]
-                indices = indices[self.batch_size:]
+            indices = random.sample(range(len(self.dataset)),
+                                    self.batch_size)
+            yield indices
 
     def __len__(self):
         return self.num_iterations

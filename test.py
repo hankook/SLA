@@ -28,7 +28,6 @@ def main():
 
     parser.add_argument('--model', type=str, default='resnet18')
     parser.add_argument('--T', type=float, default=1.0)
-    parser.add_argument('--with-training-agg', action='store_true')
     parser.add_argument('--with-large-loss', action='store_true')
 
     args = parser.parse_args()
@@ -89,14 +88,13 @@ def main():
     elif args.mode == 'sla+sd':
         builder = partial(trainers.create_sla_sd_trainer, model, transform,
                           T=args.T,
-                          with_training_agg=args.with_training_agg,
                           with_large_loss=args.with_large_loss,
                           device=device)
     else:
         raise NotImplementedError('not implemented mode: {}'.format(args.mode))
 
-    validate = builder(optimizer=None,      name='val')
-    test     = builder(optimizer=None,      name='test')
+    validate = builder(optimizer=None, name='val')
+    test     = builder(optimizer=None, name='test')
 
     test.run(testloader, 1)
     print(test.state.metrics)

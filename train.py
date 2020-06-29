@@ -18,26 +18,22 @@ device = torch.device('cuda:0')
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--logdir', type=str, default=None)
-    parser.add_argument('--dataset', type=str, default='imagenet')
-    parser.add_argument('--datadir', type=str, default='/home/ubuntu/ILSVRC/Data/CLS-LOC')
+    parser.add_argument('--dataset', type=str, default='cifar10')
+    parser.add_argument('--datadir', type=str, default='data/')
     parser.add_argument('--batchsize', type=int, default=128)
-    parser.add_argument('--num-iterations', type=int, default=900000)
+    parser.add_argument('--num-iterations', type=int, default=80000)
     parser.add_argument('--num-samples-per-class', type=int, default=None)
-    parser.add_argument('--val-freq', type=int, default=10000)
+    parser.add_argument('--val-freq', type=int, default=1000)
     parser.add_argument('--resume', type=str, default=None)
 
     parser.add_argument('--mode', type=str, required=True)
     parser.add_argument('--aug', type=str, default=None)
 
-    parser.add_argument('--model', type=str, default='resnet18')
+    parser.add_argument('--model', type=str, default='cresnet32')
     parser.add_argument('--lr', type=float, default=0.1)
     parser.add_argument('--wd', type=float, default=1e-4)
     parser.add_argument('--T', type=float, default=1.0)
-    parser.add_argument('--with-training-agg', action='store_true')
     parser.add_argument('--with-large-loss', action='store_true')
-    parser.add_argument('--sync-bn', action='store_true')
-    parser.add_argument('--no-wd-bn', action='store_true')
-    parser.add_argument('--no-replace', action='store_true')
 
     args = parser.parse_args()
 
@@ -51,7 +47,7 @@ def main():
     ### DataLoader
     trainloader = check_dataloader(check_dataset(args.dataset, args.datadir, 'train',
                                                  num_samples_per_class=args.num_samples_per_class),
-                                   args.val_freq, args.batchsize, not args.no_replace)
+                                   args.val_freq, args.batchsize)
     valloader   = DataLoader(check_dataset(args.dataset, args.datadir, 'val'),
                              batch_size=args.batchsize, shuffle=False, num_workers=8)
     testloader  = DataLoader(check_dataset(args.dataset, args.datadir, 'test'),
@@ -62,8 +58,6 @@ def main():
         n = int(args.dataset[5:])
     elif args.dataset == 'imagenet':
         n = 1000
-    elif args.dataset.startswith('imagenet'):
-        n = int(args.dataset[len('imagenet'):])
     elif args.dataset == 'cub200' or args.dataset == 'tiny-imagenet':
         n = 200
     elif args.dataset == 'indoor':
@@ -82,36 +76,21 @@ def main():
         model = check_model(args.model, n).to(device)
     elif args.mode == 'mt':
         model = check_model(args.model, n, m).to(device)
-    elif args.mode in ['sla', 'sla+random']:
+    elif args.mode in 'sla':
         model = check_model(args.model, n*m).to(device)
     elif args.mode == 'sla+sd':
         model = check_model(args.model, n*m, n).to(device)
     else:
         raise Exception('unknown mode: {}'.format(args.mode))
 
-    if args.sync_bn:
-        # torch.distributed.init_process_group('nccl')
-        torch.distributed.init_process_group('gloo', init_method='file:///tmp/somefile', rank=0, world_size=1)
-        # process_group = torch.distributed.new_group()
-        model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
-
     model = nn.DataParallel(model)
     model.num_classes = n
     if args.aug is not None:
         model.num_transformations = m
-    if not args.no_wd_bn:
-        optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.wd, momentum=0.9)
-    else:
-        param_groups = [ { 'params': [], 'weight_decay': args.wd },
-                         { 'params': [], 'weight_decay': 0 } ]
-        for name, p in model.named_parameters():
-            if 'bn' in name:
-                param_groups[1]['params'].append(p)
-            else:
-                param_groups[0]['params'].append(p)
-        optimizer = optim.SGD(param_groups, lr=args.lr, weight_decay=args.wd, momentum=0.9)
 
-    if not args.dataset.startswith('imagenet') and args.dataset != 'inat':
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.wd, momentum=0.9)
+
+    if args.dataset not in ['imagenet', 'inat']:
         lr_scheduler = optim.lr_scheduler.MultiStepLR(optimizer,
                                                       [args.num_iterations // 2,
                                                        args.num_iterations*3 // 4])
@@ -130,11 +109,6 @@ def main():
     elif args.mode == 'sla+sd':
         builder = partial(trainers.create_sla_sd_trainer, model, transform,
                           T=args.T,
-                          with_training_agg=args.with_training_agg,
-                          with_large_loss=args.with_large_loss,
-                          device=device)
-    elif args.mode == 'sla+random':
-        builder = partial(trainers.create_sla_random_trainer, model, transform,
                           with_large_loss=args.with_large_loss,
                           device=device)
     else:
