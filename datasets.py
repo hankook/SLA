@@ -69,7 +69,7 @@ def check_dataset(name, root, split, num_samples_per_class=None):
             if num_samples_per_class is not None:
                 indices = np.load('splits/imagenet_{}.npy'.format(num_samples_per_class))
             else:
-                indices = list(range(len(datasets)))
+                indices = list(range(len(dataset)))
             indices = [i for i in indices if dataset.samples[i][1] in labels]
             dataset = Subset(dataset, indices)
         else:
